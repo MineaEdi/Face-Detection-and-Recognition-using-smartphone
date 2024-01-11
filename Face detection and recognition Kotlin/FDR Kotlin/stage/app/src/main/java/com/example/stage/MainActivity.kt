@@ -166,8 +166,6 @@ class MainActivity : AppCompatActivity() {
 
     }
 
-
-
     private fun performSelectedAction(selectedAction: Int) {
         if (selectedAction == 0) {
             saveFacesToGallery();
