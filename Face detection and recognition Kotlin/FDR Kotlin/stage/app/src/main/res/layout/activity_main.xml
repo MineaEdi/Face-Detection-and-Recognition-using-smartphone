@@ -118,7 +118,7 @@
         android:rotation="0"
         android:rotationX="0"
         android:rotationY="0"
-        android:text="Detect"
+        android:text="FACE DETECT"
         android:textAlignment="center"
         android:visibility="visible"
         app:layout_constraintBottom_toTopOf="@+id/frame"

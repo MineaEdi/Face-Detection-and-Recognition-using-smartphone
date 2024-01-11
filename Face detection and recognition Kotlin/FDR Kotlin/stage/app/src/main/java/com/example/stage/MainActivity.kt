@@ -84,7 +84,6 @@ class MainActivity : AppCompatActivity() {
     var context: Context = this@MainActivity
     var ok = true
     var cam_preview: PreviewView? = null
-    var switch_cam: Button? = null
     var detect_recognize: Button? = null
     var graphicOverlay: GraphicOverlay? = null
     var isRecognizing = false
@@ -93,15 +92,12 @@ class MainActivity : AppCompatActivity() {
     private val savedFaces = HashMap<String, Bitmap?>() //saved Faces from detected faces
     var scaled: Bitmap? = null
     var showDetected = false
-    var selected_cam = CameraSelector.LENS_FACING_FRONT
     var preview_the_face: ImageView? = null
     var threshold_distance = 1.0f
     var tensorfLite: Interpreter? = null
     private val handler = Handler(Looper.getMainLooper())
     var meniu: Button? = null
     var faceDetector: FaceDetector? = null
-    var switchCamera = false
-    var cameraProvider: ProcessCameraProvider? = null
     var face_adder: ImageButton? = null
     private val scaledLock = Any()
 
@@ -115,14 +111,13 @@ class MainActivity : AppCompatActivity() {
         face_adder!!.visibility = View.INVISIBLE
         preview_the_face!!.visibility = View.INVISIBLE
         detect_recognize = findViewById(R.id.detect_recognize)
-        switch_cam = findViewById(R.id.switchCam)
         meniu = findViewById(R.id.meniu)
         graphicOverlay = findViewById(R.id.graphic_overlay)
         cam_preview = findViewById(R.id.cam_realtime)
 
         LoadModel()
 
-        meniu?.setOnClickListener { view: View? ->
+        meniu?.setOnClickListener {
             val actionDialogBuilder = AlertDialog.Builder(context)
             actionDialogBuilder.setTitle("Choose an Action:")
 
@@ -142,46 +137,33 @@ class MainActivity : AppCompatActivity() {
             actionDialog.show()
         }
 
-        face_adder?.setOnClickListener { v: View? -> face_adder() }
-
-
-        switch_cam?.setOnClickListener { v: View? ->
-            if (selected_cam == CameraSelector.LENS_FACING_BACK) {
-                switchCamera = true
-                selected_cam = CameraSelector.LENS_FACING_FRONT
-            } else {
-                switchCamera = false
-                selected_cam = CameraSelector.LENS_FACING_BACK
-            }
-            cameraProvider?.unbindAll()
-            initializeCamera()
-        }
+        face_adder?.setOnClickListener { face_adder() }
 
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != 0) {
             ActivityCompat.requestPermissions(this, arrayOf("android.permission.CAMERA"), 100)
         }
-
-        detect_recognize?.setOnClickListener { v: View? ->
+        initializeCamera()
+        detect_recognize?.setOnClickListener {
             when (detect_recognize?.text.toString()) {
-                "Recognize" -> {
+                "FACE RECOGNITION" -> {
                     isRecognizing = true
                     ok = true
                     showDetected = false
-                    detect_recognize?.text = "Detect"
+                    detect_recognize?.text = "FACE DETECTION"
                     face_adder?.visibility = View.INVISIBLE
                     preview_the_face?.visibility = View.INVISIBLE
                 }
                 else -> {
                     isRecognizing = false
                     showDetected = true
-                    detect_recognize?.text = "Recognize"
+                    detect_recognize?.text = "FACE RECOGNITION"
                     face_adder?.visibility = View.VISIBLE
                     preview_the_face?.visibility = View.VISIBLE
                 }
             }
         }
 
-        initializeCamera()
+
     }
 
 
@@ -330,8 +312,8 @@ class MainActivity : AppCompatActivity() {
         val select_lens = createLensFacingSelector()
         val imgAnalysis = createImageAnalysisUseCase()
         camPreview.setSurfaceProvider(cam_preview!!.surfaceProvider)
-        val executor: Executor = Executors.newSingleThreadExecutor()
-        imgAnalysis.setAnalyzer(executor) { imgProxy: ImageProxy -> processImageAnalysis(imgProxy) }
+        val exec: Executor = Executors.newSingleThreadExecutor()
+        imgAnalysis.setAnalyzer(exec) { imgProxy: ImageProxy -> processImageAnalysis(imgProxy) }
         camProvInst.bindToLifecycle((this as LifecycleOwner), select_lens, imgAnalysis, camPreview)
     }
 
@@ -340,7 +322,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun createLensFacingSelector(): CameraSelector {
-        return CameraSelector.Builder().requireLensFacing(selected_cam).build()
+        return CameraSelector.Builder().requireLensFacing(CameraSelector.LENS_FACING_BACK).build()
     }
 
     private fun createImageAnalysisUseCase(): ImageAnalysis {
@@ -352,9 +334,9 @@ class MainActivity : AppCompatActivity() {
 
     private fun getInputImageFromProxy(imageProxy: ImageProxy): InputImage? {
         var inputImage: InputImage? = null
-        @SuppressLint("UnsafeExperimentalUsageError") val mediaImage = imageProxy.image
-        if (mediaImage != null) {
-            inputImage = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
+        @SuppressLint("UnsafeExperimentalUsageError") val image_from_imageProxy = imageProxy.image
+        if (image_from_imageProxy != null) {
+            inputImage = InputImage.fromMediaImage(image_from_imageProxy, imageProxy.imageInfo.rotationDegrees)
         }
         return inputImage
     }
@@ -407,12 +389,10 @@ class MainActivity : AppCompatActivity() {
 
     private fun processDetectedFace(face: Face, imageProxy: ImageProxy): Bitmap {
         val frameBitmap = getBitmapFromImageProxy(imageProxy)
-        val rotatedBitmap = transformBitmap(frameBitmap, imageProxy.imageInfo.rotationDegrees, false)
+        val rotatedBitmap = transformBitmap(frameBitmap, imageProxy.imageInfo.rotationDegrees)
         val boundingBox = RectF(face.boundingBox)
         var croppedFaceBitmap = cropBitmap(rotatedBitmap, boundingBox)
-        if (switchCamera) {
-            croppedFaceBitmap = transformBitmap(croppedFaceBitmap, 0, switchCamera)
-        }
+        croppedFaceBitmap = transformBitmap(croppedFaceBitmap, 0)
         return resizeImage(croppedFaceBitmap, 112, 112)
     }
 
@@ -436,45 +416,60 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun loadFacesFromGallery() {
-        ok = false
-        val intent = Intent()
-        intent.type = "image/*"
-        intent.action = Intent.ACTION_GET_CONTENT
-        startActivityForResult(Intent.createChooser(intent, "Select Picture"), 1)
+        val content_intent = Intent().apply {
+            type = "image/*"
+            action = "android.intent.action.GET_CONTENT"
+        }
+        startActivityForResult(Intent.createChooser(content_intent, "Select Picture"), 1)
     }
 
-    public override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-        if (resultCode == RESULT_OK && requestCode == 1 && data != null) {
-            val selectedImageUri = data.data
-            try {
+    public override fun onActivityResult(rqCode: Int, resCode: Int, data: Intent?) {
+        super.onActivityResult(rqCode, resCode, data)
+
+        if (resCode == -1 && rqCode == 1 && data != null) {
+            val selectedImageUri: Uri? = data.data
                 val frameBitmap = decodeBitmapFromUri(selectedImageUri)
                 processImage(frameBitmap)
-            } catch (e: IOException) {
-                e.printStackTrace()
+
+    }
+    }
+
+    private fun processImage(bit: Bitmap) {
+        val inputImage = InputImage.fromBitmap(bit, 0)
+
+        faceDetector!!.process(inputImage)
+            .addOnSuccessListener { faces: List<Face> ->
+                handleFaceDetectionSuccess(faces, bit)
             }
+            .addOnFailureListener { e: Exception? ->
+                handleFaceDetectionFailure()
+            }
+    }
+
+    private fun handleFaceDetectionSuccess(faces: List<Face>, bit: Bitmap) {
+        if (faces.isNotEmpty()) {
+            graphicOverlay!!.clearOverlay()
+            val detectedFace = faces[0]
+            val boundingBox = RectF(detectedFace.boundingBox)
+            scaled = preprocessFaceImage(bit, boundingBox)
+            displayProcessedFaceImage(scaled!!)
+            recognizeImage(scaled, boundingBox)
         }
     }
 
-    private fun processImage(frameBitmap: Bitmap) {
-        val inputImage = InputImage.fromBitmap(frameBitmap, 0)
-        faceDetector!!.process(inputImage)
-                .addOnSuccessListener { faces: List<Face> ->
-                    if (!faces.isEmpty()) {
-                        graphicOverlay!!.clearOverlay()
-                        val face = faces[0]
-                        val croppedFace = cropBitmap(transformBitmap(frameBitmap, 0, switchCamera), RectF(face.boundingBox))
-                        scaled = resizeImage(croppedFace, 112, 112)
-                        preview_the_face!!.setImageBitmap(scaled)
-                        val boundingBox = RectF(face.boundingBox)
-                        face_adder()
-                        recognizeImage(scaled, boundingBox)
-                    }
-                }
-                .addOnFailureListener { e: Exception? ->
-                    ok = true
-                    Toast.makeText(context, "Failed to add", Toast.LENGTH_SHORT).show()
-                }
+    private fun preprocessFaceImage(frameBitmap: Bitmap, boundingBox: RectF): Bitmap {
+        val rotatedBitmap = transformBitmap(frameBitmap, 0)
+        val croppedFace = cropBitmap(rotatedBitmap, boundingBox)
+        return resizeImage(croppedFace, 112, 112)
+    }
+
+    private fun displayProcessedFaceImage(processedImage: Bitmap) {
+        preview_the_face!!.setImageBitmap(processedImage)
+        face_adder()
+    }
+    private fun handleFaceDetectionFailure() {
+        ok = true
+        Toast.makeText(context, "Failed to add", Toast.LENGTH_SHORT).show()
     }
 
     //TAKE DATA FROM LOCAL STORAGE AND CONVERT TO BITMAP
@@ -516,26 +511,23 @@ class MainActivity : AppCompatActivity() {
                 .add(ResizeOp(112, 112, ResizeOp.ResizeMethod.BILINEAR))
                 .add(NormalizeOp(128.0f, 128.0f))
                 .build()
-        var inputImage = TensorImage(DataType.FLOAT32)
-        inputImage.load(bitmap)
-        inputImage = imageProcessor.process(inputImage)
+        var input_for_model = TensorImage(DataType.FLOAT32)
+        input_for_model.load(bitmap)
+        input_for_model = imageProcessor.process(input_for_model)
 
-        val imgData = inputImage.buffer
+        val imgData = input_for_model.buffer
 
-        // Run model
         val inputArray = arrayOf<Any>(imgData)
         val outputMap: MutableMap<Int, Any> = HashMap()
         encodings = Array(1) { FloatArray(192) }
         outputMap[0] = encodings
         tensorfLite!!.runForMultipleInputsOutputs(inputArray, outputMap)
-        var distance = Float.MAX_VALUE
 
-        //Compare new face with saved Faces.
         if (savedRegistered.size > 0) {
             val nearest = findNearest(encodings[0])
             if (nearest != null) {
                 val name = nearest.first
-                distance = nearest.second
+                var distance = nearest.second
                 var confidenceVal = 0.0f
                 confidenceVal = 1.0f / (1.0f + distance)
                 val confidenceStr = java.lang.Float.toString(confidenceVal)
@@ -597,10 +589,10 @@ class MainActivity : AppCompatActivity() {
             return croppedBitmap
         }
 
-        private fun transformBitmap(originalBitmap: Bitmap?, rotDegrees: Int, switchCamera: Boolean): Bitmap {
+        private fun transformBitmap(originalBitmap: Bitmap?, rotDegrees: Int): Bitmap {
             val transformationMatrix = Matrix()
             transformationMatrix.postRotate(rotDegrees.toFloat())
-            transformationMatrix.postScale(if (switchCamera) -1.0f else 1.0f, 1.0f)
+                transformationMatrix.postScale(1.0f , 1.0f)
             return Bitmap.createBitmap(originalBitmap!!, 0, 0, originalBitmap.width, originalBitmap.height, transformationMatrix, true)
 
         }
